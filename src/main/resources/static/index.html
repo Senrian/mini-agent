@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Agent - AI Chat</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-input: #334155;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: #475569;
+            --success: #22c55e;
+            --error: #ef4444;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Header */
+        .header {
+            background: var(--bg-card);
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Main */
+        .main {
+            flex: 1;
+            display: flex;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+            padding: 24px;
+            gap: 24px;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .sidebar-title {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+        
+        .agent-btn {
+            padding: 12px 16px;
+            background: var(--bg-input);
+            border: 1px solid transparent;
+            border-radius: 8px;
+            color: var(--text-main);
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s;
+        }
+        
+        .agent-btn:hover {
+            border-color: var(--primary);
+        }
+        
+        .agent-btn.active {
+            background: rgba(37, 99, 235, 0.2);
+            border-color: var(--primary);
+        }
+        
+        .agent-btn .name { font-weight: 600; margin-bottom: 4px; }
+        .agent-btn .desc { font-size: 12px; color: var(--text-muted); }
+        
+        /* Chat */
+        .chat-container {
+            flex: 1;
+            background: var(--bg-card);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.6;
+        }
+        
+        .message.user {
+            align-self: flex-end;
+            background: var(--primary);
+        }
+        
+        .message.assistant {
+            align-self: flex-start;
+            background: var(--bg-input);
+        }
+        
+        .message.thinking {
+            background: rgba(147, 51, 234, 0.2);
+            border: 1px solid rgba(147, 51, 234, 0.3);
+        }
+        
+        .message .label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        
+        /* Input */
+        .chat-input {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+        }
+        
+        .chat-input input {
+            flex: 1;
+            padding: 12px 16px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .chat-input input:focus {
+            border-color: var(--primary);
+        }
+        
+        .chat-input button {
+            padding: 12px 24px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        .chat-input button:hover {
+            background: var(--primary-hover);
+        }
+        
+        .chat-input button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-muted);
+            padding: 12px 16px;
+        }
+        
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Tools Panel */
+        .tools-panel {
+            width: 300px;
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        
+        .tool-item {
+            padding: 12px;
+            background: var(--bg-input);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        
+        .tool-item .name { color: var(--success); font-weight: 600; }
+        
+        @media (max-width: 768px) {
+            .main { flex-direction: column; }
+            .sidebar, .tools-panel { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">🤖 Mini Agent</div>
+        <div class="status">
+            <div class="status-dot"></div>
+            <span>DeepSeek-Chat</span>
+        </div>
+    </header>
+    
+    <main class="main">
+        <aside class="sidebar">
+            <div class="sidebar-title">选择 Agent</div>
+            <button class="agent-btn active" data-agent="assistant">
+                <div class="name">💬 智能助手</div>
+                <div class="desc">通用对话助手</div>
+            </button>
+            <button class="agent-btn" data-agent="coder">
+                <div class="name">💻 代码助手</div>
+                <div class="desc">编程问题解答</div>
+            </button>
+            <button class="agent-btn" data-agent="analyst">
+                <div class="name">📊 数据分析师</div>
+                <div class="desc">数据分析与可视化</div>
+            </button>
+            <button class="agent-btn" data-agent="researcher">
+                <div class="name">🔍 研究助手</div>
+                <div class="desc">信息搜集与分析</div>
+            </button>
+            <button class="agent-btn" data-agent="writer">
+                <div class="name">✍️ 写作助手</div>
+                <div class="desc">文章撰写与润色</div>
+            </button>
+        </aside>
+        
+        <section class="chat-container">
+            <div class="chat-messages" id="messages">
+                <div class="message assistant">
+                    <div class="label">Mini Agent</div>
+                    你好！我是 Mini Agent，基于 DeepSeek 大模型。有什么我可以帮助你的吗？
+                </div>
+            </div>
+            
+            <div class="chat-input">
+                <input type="text" id="userInput" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
+                <button onclick="sendMessage()" id="sendBtn">发送</button>
+            </div>
+        </section>
+        
+        <aside class="tools-panel">
+            <div class="sidebar-title">可用工具</div>
+            <div class="tool-item">
+                <span class="name">🔍 Web Search</span><br>
+                搜索互联网信息
+            </div>
+            <div class="tool-item">
+                <span class="name">🌐 Web Extractor</span><br>
+                抓取网页内容
+            </div>
+            <div class="tool-item">
+                <span class="name">🐍 Python Executor</span><br>
+                执行Python代码
+            </div>
+            <div class="tool-item">
+                <span class="name">📄 Doc Parser</span><br>
+                解析文档内容
+            </div>
+        </aside>
+    </main>
+    
+    <script>
+        const API_BASE = window.location.origin;
+        let currentAgent = 'assistant';
+        
+        const agentPrompts = {
+            assistant: 'You are a helpful AI assistant.',
+            coder: 'You are an expert programming assistant. Help users write, debug, and understand code. Provide clear explanations and efficient solutions.',
+            analyst: 'You are a data analyst. Help users analyze data, create visualizations, and derive insights. Use Python for calculations when needed.',
+            researcher: 'You are a research assistant. Help users gather information, analyze topics, and summarize findings. Use available tools to search the web.',
+            writer: 'You are a professional writing assistant. Help users create, edit, and improve written content. Focus on clarity, grammar, and style.'
+        };
+        
+        const agentNames = {
+            assistant: '💬 智能助手',
+            coder: '💻 代码助手',
+            analyst: '📊 数据分析师',
+            researcher: '🔍 研究助手',
+            writer: '✍️ 写作助手'
+        };
+        
+        // Agent selection
+        document.querySelectorAll('.agent-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.agent-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentAgent = btn.dataset.agent;
+                
+                // Clear chat
+                document.getElementById('messages').innerHTML = `
+                    <div class="message assistant">
+                        <div class="label">${agentNames[currentAgent]}</div>
+                        已切换到 ${agentNames[currentAgent]}。有什么我可以帮助你的？
+                    </div>
+                `;
+            });
+        });
+        
+        function handleKeyPress(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+        
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            // Add user message
+            addMessage('user', message);
+            input.value = '';
+            
+            // Show loading
+            const loadingId = showLoading();
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: [{ role: 'user', content: message }],
+                        systemPrompt: agentPrompts[currentAgent]
+                    })
+                });
+                
+                removeLoading(loadingId);
+                
+                if (!response.ok) {
+                    throw new Error('请求失败');
+                }
+                
+                const data = await response.json();
+                addMessage('assistant', data.content || data.response || JSON.stringify(data));
+                
+            } catch (error) {
+                removeLoading(loadingId);
+                addMessage('assistant', '❌ 错误: ' + error.message);
+            }
+        }
+        
+        function addMessage(role, content) {
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.innerHTML = `<div class="label">${role === 'user' ? '你' : agentNames[currentAgent]}</div>${content}`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function showLoading() {
+            const container = document.getElementById('messages');
+            const id = 'loading-' + Date.now();
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = 'loading';
+            div.innerHTML = '<div class="spinner"></div><span>思考中...</span>';
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            return id;
+        }
+        
+        function removeLoading(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+    </script>
+</body>
+</html>
