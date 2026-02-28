@@ -15,7 +15,7 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * AI服务 - 负责与AI API交互
+ * AI服务 - 支持多种LLM provider
  */
 @Slf4j
 @Service
@@ -38,45 +38,14 @@ public class AiService {
      */
     public ChatResponse chat(ChatRequest request) {
         try {
-            // 构建请求体
-            Map<String, Object> body = new HashMap<>();
-            body.put("model", aiProperties.getModel());
-            body.put("max_tokens", request.getMaxTokens() != null ? request.getMaxTokens() : aiProperties.getMaxTokens());
-            body.put("temperature", request.getTemperature() != null ? request.getTemperature() : aiProperties.getTemperature());
-            
-            // 构建消息列表
-            List<Map<String, Object>> messages = new ArrayList<>();
-            
-            // 添加系统提示
-            if (request.getSystemPrompt() != null && !request.getSystemPrompt().isEmpty()) {
-                Map<String, Object> systemMsg = new HashMap<>();
-                systemMsg.put("role", "system");
-                systemMsg.put("content", request.getSystemPrompt());
-                messages.add(systemMsg);
-            }
-            
-            // 添加用户消息
-            if (request.getMessages() != null) {
-                for (ChatRequest.Message msg : request.getMessages()) {
-                    Map<String, Object> messageMap = new HashMap<>();
-                    messageMap.put("role", msg.getRole());
-                    messageMap.put("content", msg.getContent());
-                    messages.add(messageMap);
-                }
-            }
-            
-            body.put("messages", messages);
-            
-            // 添加工具定义 (如果有用)
-            if (request.getTools() != null && !request.getTools().isEmpty()) {
-                body.put("tools", convertTools(request.getTools()));
-            }
-
+            Map<String, Object> body = buildRequestBody(request);
             String requestBody = objectMapper.writeValueAsString(body);
             
-            // 发送请求
+            String endpoint = aiProperties.getChatEndpoint();
+            log.debug("Calling AI: {} with model: {}", endpoint, aiProperties.getModel());
+
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(aiProperties.getBaseUrl() + "/chat/completions"))
+                    .uri(URI.create(endpoint))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer " + aiProperties.getApiKey())
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
@@ -90,7 +59,7 @@ public class AiService {
                 return parseResponse(response.body());
             } else {
                 log.error("AI API error: {} - {}", response.statusCode(), response.body());
-                throw new RuntimeException("AI API error: " + response.statusCode());
+                throw new RuntimeException("AI API error: " + response.statusCode() + " - " + response.body());
             }
             
         } catch (Exception e) {
@@ -100,31 +69,68 @@ public class AiService {
     }
 
     /**
-     * 发送流式聊天请求 (SSE)
+     * 构建请求体
+     */
+    private Map<String, Object> buildRequestBody(ChatRequest request) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", aiProperties.getModel());
+        body.put("max_tokens", request.getMaxTokens() != null ? request.getMaxTokens() : aiProperties.getMaxTokens());
+        body.put("temperature", request.getTemperature() != null ? request.getTemperature() : aiProperties.getTemperature());
+        
+        // DeepSeek支持
+        if ("deepseek".equalsIgnoreCase(aiProperties.getProvider())) {
+            body.put("stream", false);
+        }
+        
+        List<Map<String, Object>> messages = new ArrayList<>();
+        
+        // 系统提示
+        String systemPrompt = request.getSystemPrompt();
+        if (systemPrompt == null || systemPrompt.isEmpty()) {
+            systemPrompt = aiProperties.getSystemPrompt();
+        }
+        if (systemPrompt != null && !systemPrompt.isEmpty()) {
+            Map<String, Object> systemMsg = new HashMap<>();
+            systemMsg.put("role", "system");
+            systemMsg.put("content", systemPrompt);
+            messages.add(systemMsg);
+        }
+        
+        // 用户消息
+        if (request.getMessages() != null) {
+            for (ChatRequest.Message msg : request.getMessages()) {
+                Map<String, Object> messageMap = new HashMap<>();
+                messageMap.put("role", msg.getRole());
+                messageMap.put("content", msg.getContent());
+                messages.add(messageMap);
+            }
+        }
+        
+        body.put("messages", messages);
+        
+        // 添加工具
+        if (request.getTools() != null && !request.getTools().isEmpty()) {
+            body.put("tools", convertTools(request.getTools()));
+            if ("deepseek".equalsIgnoreCase(aiProperties.getProvider())) {
+                body.put("parallel_tool_calls", true);
+            }
+        }
+        
+        return body;
+    }
+
+    /**
+     * 发送流式请求
      */
     public void chatStream(ChatRequest request, StreamCallback callback) {
         try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("model", aiProperties.getModel());
-            body.put("max_tokens", request.getMaxTokens() != null ? request.getMaxTokens() : aiProperties.getMaxTokens());
-            body.put("temperature", request.getTemperature() != null ? request.getTemperature() : aiProperties.getTemperature());
+            Map<String, Object> body = buildRequestBody(request);
             body.put("stream", true);
-            
-            List<Map<String, Object>> messages = new ArrayList<>();
-            if (request.getSystemPrompt() != null) {
-                messages.add(Map.of("role", "system", "content", request.getSystemPrompt()));
-            }
-            if (request.getMessages() != null) {
-                for (ChatRequest.Message msg : request.getMessages()) {
-                    messages.add(Map.of("role", msg.getRole(), "content", msg.getContent()));
-                }
-            }
-            body.put("messages", messages);
 
             String requestBody = objectMapper.writeValueAsString(body);
             
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(aiProperties.getBaseUrl() + "/chat/completions"))
+                    .uri(URI.create(aiProperties.getChatEndpoint()))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer " + aiProperties.getApiKey())
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
@@ -159,7 +165,7 @@ public class AiService {
     }
 
     /**
-     * 解析API响应
+     * 解析响应
      */
     private ChatResponse parseResponse(String responseBody) throws Exception {
         Map<String, Object> response = objectMapper.readValue(responseBody, Map.class);
@@ -171,6 +177,12 @@ public class AiService {
         if (choices != null && !choices.isEmpty()) {
             Map<String, Object> choice = choices.get(0);
             Map<String, Object> message = (Map<String, Object>) choice.get("message");
+            
+            // 处理DeepSeek的reasoning_content
+            if (message.containsKey("reasoning_content")) {
+                chatResponse.setThinking((String) message.get("reasoning_content"));
+            }
+            
             chatResponse.setContent((String) message.get("content"));
             chatResponse.setFinishReason((String) choice.get("finish_reason"));
         }
@@ -210,9 +222,6 @@ public class AiService {
         return result;
     }
 
-    /**
-     * 流式回调接口
-     */
     public interface StreamCallback {
         void onMessage(String data);
         void onComplete();
